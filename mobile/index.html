@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Arcade Pong Controller</title>
+    <style>
+        body, html {
+            margin: 0; padding: 0;
+            width: 100%; height: 100%;
+            background-color: #1a1a24;
+            color: white;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+            touch-action: none;
+        }
+        #status {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            font-weight: bold;
+            color: #ff6b6b;
+        }
+        #btn-connect {
+            padding: 15px 40px;
+            font-size: 1.5rem;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        }
+        #btn-serve {
+            display: none;
+            width: 80vw;
+            height: 40vh;
+            font-size: 3rem;
+            font-weight: bold;
+            background-color: #f5b041;
+            color: #1a1a24;
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+            margin-top: 20px;
+        }
+        #btn-serve:active {
+            transform: scale(0.95);
+        }
+        #debug {
+            position: absolute;
+            bottom: 20px;
+            font-family: monospace;
+            color: #888;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="status">Disconnected</div>
+    <button id="btn-connect">CONNECT PADDLE</button>
+    <button id="btn-serve">SERVE</button>
+    <div id="debug">Tilt: 0.00</div>
+
+    <script>
+        const btnConnect = document.getElementById('btn-connect');
+        const btnServe = document.getElementById('btn-serve');
+        const statusEl = document.getElementById('status');
+        const debugEl = document.getElementById('debug');
+        
+        let ws;
+        let isConnected = false;
+
+        function connectWebSocket() {
+            // Assume the PC is serving this file on port 8080.
+            // Connect WebSocket to the same IP but port 8765.
+            const pc_ip = window.location.hostname;
+            ws = new WebSocket(`ws://${pc_ip}:8765`);
+
+            ws.onopen = () => {
+                isConnected = true;
+                statusEl.textContent = "CONNECTED - TILT TO MOVE";
+                statusEl.style.color = "#4CAF50";
+                btnConnect.style.display = "none";
+                btnServe.style.display = "block";
+            };
+
+            ws.onclose = () => {
+                isConnected = false;
+                statusEl.textContent = "Disconnected - Refresh to retry";
+                statusEl.style.color = "#ff6b6b";
+                btnConnect.style.display = "block";
+                btnServe.style.display = "none";
+            };
+        }
+
+        btnConnect.addEventListener('click', () => {
+            // Request permission for device orientation (required on iOS)
+            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', handleOrientation);
+                            connectWebSocket();
+                        } else {
+                            alert("Permission denied. Cannot use IMU.");
+                        }
+                    })
+                    .catch(console.error);
+            } else {
+                // Non-iOS 13+ devices
+                window.addEventListener('deviceorientation', handleOrientation);
+                connectWebSocket();
+            }
+        });
+
+        btnServe.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (isConnected) {
+                ws.send(JSON.stringify({ type: 'action', action: 'serve' }));
+                navigator.vibrate && navigator.vibrate(50);
+            }
+        });
+
+        // For desktop testing
+        btnServe.addEventListener('mousedown', (e) => {
+            if (isConnected) {
+                ws.send(JSON.stringify({ type: 'action', action: 'serve' }));
+            }
+        });
+
+        function handleOrientation(event) {
+            if (!isConnected) return;
+            
+            // beta is front-to-back tilt in degrees, where front is positive
+            // gamma is left-to-right tilt in degrees, where right is positive
+            // For a paddle held horizontally (landscape), beta or gamma might be the steering axis.
+            // Assuming phone is held in Portrait mode like a joystick:
+            // Tilting phone left/right is 'gamma'.
+            let gamma = event.gamma; 
+            
+            // Clamp gamma between -45 and 45
+            if (gamma > 45) gamma = 45;
+            if (gamma < -45) gamma = -45;
+
+            debugEl.textContent = `Tilt (gamma): ${gamma.toFixed(2)}`;
+
+            ws.send(JSON.stringify({
+                type: 'imu',
+                beta: gamma  // We send gamma as the primary steering axis (mapped to beta on server)
+            }));
+        }
+    </script>
+</body>
+</html>

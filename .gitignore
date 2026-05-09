@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+assets/qrcode.png
+.vscode/
+.idea/

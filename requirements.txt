@@ -1,0 +1,5 @@
+panda3d>=1.10.13
+requests
+qrcode[pil]
+websockets>=12.0
+Pillow
