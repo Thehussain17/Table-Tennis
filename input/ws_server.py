@@ -38,22 +38,24 @@ class IMUServer:
         import functools
         handler = functools.partial(SimpleHTTPRequestHandler, directory=web_dir)
         server = HTTPServer(('0.0.0.0', C.HTTP_PORT), handler)
-        print(f"[HTTP] Mobile controller available at http://<YOUR_IP>:{C.HTTP_PORT}/")
+        print(f"[HTTP] Mobile controller available at http://0.0.0.0:{C.HTTP_PORT}/")
         server.serve_forever()
 
     def _run_ws_server(self):
         async def main():
             print(f"[WS] WebSocket server started on ws://0.0.0.0:{C.WS_PORT}")
-            async with websockets.serve(self._ws_handler, "0.0.0.0", C.WS_PORT):
+            async with websockets.serve(self._ws_handler, "0.0.0.0", C.WS_PORT, ping_interval=None):
                 await asyncio.Future()  # run forever
 
         asyncio.run(main())
 
-    async def _ws_handler(self, websocket, path):
+    async def _ws_handler(self, websocket):
         print("[WS] Mobile client connected!")
         self.is_connected = True
         try:
             async for message in websocket:
+                print("MESSAGE:", message)
+
                 data = json.loads(message)
                 if data.get('type') == 'imu':
                     # Roll (beta) or tilt left/right controls the paddle

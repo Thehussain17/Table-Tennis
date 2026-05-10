@@ -78,8 +78,11 @@
         function connectWebSocket() {
             // Assume the PC is serving this file on port 8080.
             // Connect WebSocket to the same IP but port 8765.
+            alert("CREATING WEBSOCKET");
             const pc_ip = window.location.hostname;
             ws = new WebSocket(`ws://${pc_ip}:8765`);
+            alert(`Trying ws://${pc_ip}:8765`);
+            alert("WEBSOCKET OBJECT CREATED");
 
             ws.onopen = () => {
                 isConnected = true;
@@ -90,32 +93,25 @@
             };
 
             ws.onclose = () => {
+                alert("WebSocket closed");
                 isConnected = false;
                 statusEl.textContent = "Disconnected - Refresh to retry";
                 statusEl.style.color = "#ff6b6b";
                 btnConnect.style.display = "block";
                 btnServe.style.display = "none";
             };
+
+            ws.onerror = (e) => {
+                alert("WebSocket error");
+            };
         }
 
         btnConnect.addEventListener('click', () => {
-            // Request permission for device orientation (required on iOS)
-            if (typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(permissionState => {
-                        if (permissionState === 'granted') {
-                            window.addEventListener('deviceorientation', handleOrientation);
-                            connectWebSocket();
-                        } else {
-                            alert("Permission denied. Cannot use IMU.");
-                        }
-                    })
-                    .catch(console.error);
-            } else {
-                // Non-iOS 13+ devices
-                window.addEventListener('deviceorientation', handleOrientation);
-                connectWebSocket();
-            }
+            alert("CONNECT BUTTON CLICKED");
+            connectWebSocket();
+            window.addEventListener('deviceorientation', handleOrientation);
+
+            alert("BYPASS MODE");
         });
 
         btnServe.addEventListener('touchstart', (e) => {
