@@ -149,13 +149,15 @@ class TableTennisGame(ShowBase):
             is_serving = False
 
         # ── Input (keyboard) ──────────────────────────────────────────────────
-        self.keys.update(dt, is_serving=is_serving)
+        self.keys.update(dt, is_serving=is_serving, ball=self.ball_state)
         self.player_paddle.update(self.keys.px, self.keys.py, self.keys.pz)
 
-        # Ball follows player paddle during player serve
+        # Ball follows player paddle during player serve (held above paddle)
         if ms.state == MatchState.SERVING and ms.server == 'player':
             self.ball_state.set_pos(
-                self.keys.px, self.keys.py + 0.02, self.keys.pz + 0.08
+                self.keys.px,
+                self.keys.py + 0.05,   # slightly in front of paddle face
+                self.keys.pz + 0.25    # raised so serve arc clears the net
             )
 
         # ── Physics ───────────────────────────────────────────────────────────
@@ -202,9 +204,11 @@ class TableTennisGame(ShowBase):
             return
 
         bs = self.ball_state
+        # Ensure ball starts from a clean position above the paddle
+        bs.set_pos(self.keys.px, self.keys.py + 0.05, self.keys.pz + 0.25)
         bs.set_vel(0, C.SERVE_SPEED_Y, C.SERVE_SPEED_Z)
         bs.in_play = True
-        bs.bounced_on_side = None
+        bs.bounced_on_side = 'player'   # served from player side
         self.match.state = MatchState.RALLY
         self.ball_vis.clear_trail()
         self._play('pock', pitch=0.8)
@@ -217,38 +221,43 @@ class TableTennisGame(ShowBase):
         if not bs.in_play or bs.vy > 0:
             return   # ball moving away from player
 
-        # Check only X and Y distance (ignore Z for pure sideways arcade feel)
         dx = bs.x - self.keys.px
-        dy = bs.y - self.keys.py
+        dz = bs.z - self.keys.pz
 
-        if abs(dx) < C.PADDLE_RADIUS * 1.8 and bs.y < C.PLAYER_PADDLE_Y + 0.15:
-            power = 0.8
+        # Slightly forgiving hit box on player side for better feel
+        within_face = (abs(dx) < C.PADDLE_RADIUS * 1.6 and
+                       abs(dz) < C.PADDLE_RADIUS * 1.6 and
+                       bs.y < C.PLAYER_PADDLE_Y + 0.18)
+
+        if within_face:
             self.physics.apply_paddle_hit(
                 bs,
                 self.keys.px, self.keys.py, self.keys.pz,
-                self.keys.vx, 2.8, 0,  # Fast enough to clear net
-                power
+                self.keys.vx, 2.8, self.keys.vz,   # include vz from auto-track
+                power=0.85
             )
-            # Override ball X-velocity based on hit position (Pong style)
-            hit_factor = (bs.x - self.keys.px) / C.PADDLE_RADIUS
-            bs.vx += hit_factor * 2.5
-            bs.vz = 2.0  # Controlled arc
-            self._hit_cooldown = 0.3
+            # vz override for a clean arc that clears the net
+            bs.vz = max(bs.vz, 2.0)
+            self._hit_cooldown = 0.25
             self._play('pock', pitch=1.0)
 
     def _check_ai_hit(self):
-        """Check if ball is within AI paddle hit range."""
+        """Single source of truth for AI hit detection."""
         bs = self.ball_state
         if not bs.in_play or bs.vy < 0:
             return   # ball moving away from AI
 
         dx = bs.x - self.ai.px
-        dy = bs.y - self.ai.py
         dz = bs.z - self.ai.pz
-        dist = math.sqrt(dx*dx + dy*dy + dz*dz)
 
-        if dist < C.PADDLE_RADIUS * 1.6 and bs.y > 0.5:
+        within_face = (abs(dx) < C.PADDLE_RADIUS * 1.5 and
+                       abs(dz) < C.PADDLE_RADIUS * 1.5 and
+                       bs.y > C.AI_PADDLE_Y - 0.15)
+
+        if within_face and self.ai._hit_cooldown <= 0:
             self.ai._try_hit(bs)
+            bs.ai_bounces = 0          # ball was hit — reset double-bounce counter
+            self.ai._hit_cooldown = 0.4
             self._play('pock', pitch=1.1)
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -262,10 +271,10 @@ class TableTennisGame(ShowBase):
             self._ai_serve_timer = 0.0
             bs = self.ball_state
             # Spawn ball firmly in front of AI to prevent immediate paddle collision glitch
-            bs.set_pos(self.ai.px, C.AI_PADDLE_Y - 0.08, 0.15)
+            bs.set_pos(self.ai.px, C.AI_PADDLE_Y - 0.08, 0.25)
             bs.set_vel(0, -C.SERVE_SPEED_Y, C.SERVE_SPEED_Z)
             bs.in_play = True
-            bs.bounced_on_side = None
+            bs.bounced_on_side = 'ai'    # served from AI side
             self.match.state = MatchState.RALLY
             self.ball_vis.clear_trail()
             self._play('pock', pitch=0.9)

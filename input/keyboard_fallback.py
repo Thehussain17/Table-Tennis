@@ -1,10 +1,14 @@
 """
-input/keyboard_fallback.py — Phase 1 keyboard controller.
+input/keyboard_fallback.py — Keyboard + IMU controller.
 
 Controls:
   A / D        : Move paddle left / right (X axis)
   SPACE        : Serve
   ESC          : Pause
+
+Z axis (height): auto-tracks ball height when ball is approaching.
+The player only needs to control X positioning; the paddle height
+adjusts automatically with a slight lag so skill is still required.
 """
 import config as C
 from input.ws_server import IMUServer
@@ -52,44 +56,64 @@ class KeyboardController:
         if self.on_pause:
             self.on_pause()
 
-    def update(self, dt: float, is_serving: bool = False):
+    def update(self, dt: float, is_serving: bool = False, ball=None):
+        """
+        ball: BallState or None.
+        X axis  — controlled by tilt (mobile) or A/D keys.
+        Z axis  — auto-tracks ball height when ball approaches;
+                  drifts back to rest height otherwise.
+        """
         spd = C.PADDLE_SPEED
         prev_px = self.px
+        prev_pz = self.pz
 
+        # ── X axis (manual) ───────────────────────────────────────────────────
         if self.imu.is_connected:
-            # Mobile IMU Control
-            tilt = self.imu.get_tilt()
-            # tilt is [-1, 1]. Move towards max X position based on tilt.
-            # tilt=-1 is left, tilt=1 is right.
+            tilt = self.imu.get_tilt()          # -1..1
             target_px = tilt * C.PADDLE_MAX_X
-            
-            # Smooth movement towards target
             diff = target_px - self.px
-            step = spd * 1.5 * dt # IMU moves slightly faster for responsiveness
-            if abs(diff) > step:
-                self.px += step if diff > 0 else -step
-            else:
-                self.px = target_px
+            step = spd * 1.5 * dt
+            self.px += max(-step, min(step, diff))
 
-            # Handle Serve from Mobile
             if is_serving and self.imu.consume_serve_action() and self.on_serve:
                 self.on_serve()
         else:
-            # Keyboard Fallback
             if self._keys.get('a'):
                 self.px -= spd * dt
             if self._keys.get('d'):
                 self.px += spd * dt
 
         self.px = max(-C.PADDLE_MAX_X, min(C.PADDLE_MAX_X, self.px))
-        
-        # Lock Y and Z for pure arcade 2D mechanics
-        self.py = C.PLAYER_PADDLE_Y
-        self.pz = 0.15
 
-        self.vx = (self.px - prev_px) / dt if dt > 0 else 0
+        # ── Z axis (auto-track ball height) ───────────────────────────────────
+        REST_Z       = 0.15   # default paddle height
+        TRACK_SPEED  = spd * 0.9   # slightly slower than full paddle speed
+        RETURN_SPEED = spd * 0.5   # lazy drift back to rest
+
+        ball_coming = (ball is not None and ball.in_play and ball.vy < 0)
+
+        if ball_coming:
+            # Clamp target Z to valid paddle range
+            target_z = max(C.PADDLE_MIN_Z + 0.02,
+                           min(C.PADDLE_MAX_Z - 0.02, ball.z))
+            dz = target_z - self.pz
+            step_z = TRACK_SPEED * dt
+            self.pz += max(-step_z, min(step_z, dz))
+        else:
+            # Drift back to rest position
+            dz = REST_Z - self.pz
+            step_z = RETURN_SPEED * dt
+            self.pz += max(-step_z, min(step_z, dz))
+
+        self.pz = max(C.PADDLE_MIN_Z, min(C.PADDLE_MAX_Z, self.pz))
+
+        # ── Fixed Y (arcade — no depth movement) ──────────────────────────────
+        self.py = C.PLAYER_PADDLE_Y
+
+        # ── Velocities (used by physics hit calc) ─────────────────────────────
+        self.vx = (self.px - prev_px) / dt if dt > 0 else 0.0
         self.vy = 0.0
-        self.vz = 0.0
+        self.vz = (self.pz - prev_pz) / dt if dt > 0 else 0.0
 
     def cleanup(self):
         b = self._base

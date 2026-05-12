@@ -3,12 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Arcade Pong Controller</title>
+    <title>Table Tennis Controller</title>
     <style>
+        *, *::before, *::after { box-sizing: border-box; }
+
         body, html {
             margin: 0; padding: 0;
             width: 100%; height: 100%;
-            background-color: #1a1a24;
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
             color: white;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             display: flex;
@@ -17,139 +19,360 @@
             justify-content: center;
             overflow: hidden;
             touch-action: none;
+            user-select: none;
         }
+
+        h1 {
+            font-size: 1.4rem;
+            margin: 0 0 8px;
+            letter-spacing: 2px;
+            color: #f5b041;
+            text-transform: uppercase;
+        }
+
         #status {
-            font-size: 1.2rem;
-            margin-bottom: 20px;
+            font-size: 1rem;
+            margin-bottom: 16px;
             font-weight: bold;
             color: #ff6b6b;
+            text-align: center;
+            padding: 0 16px;
         }
+
         #btn-connect {
-            padding: 15px 40px;
-            font-size: 1.5rem;
-            background-color: #4CAF50;
+            padding: 14px 36px;
+            font-size: 1.3rem;
+            background: linear-gradient(135deg, #4CAF50, #2e7d32);
             color: white;
             border: none;
-            border-radius: 10px;
+            border-radius: 12px;
             cursor: pointer;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+            box-shadow: 0 6px 20px rgba(76,175,80,0.4);
+            margin-bottom: 12px;
+            transition: transform 0.1s;
         }
-        #btn-serve {
+        #btn-connect:active { transform: scale(0.96); }
+
+        /* Tilt permission button — shown inside serve-area on iOS after connect */
+        #btn-tilt-perm {
             display: none;
             width: 80vw;
-            height: 40vh;
-            font-size: 3rem;
+            padding: 14px 20px;
+            font-size: 1.15rem;
+            background: linear-gradient(135deg, #f39c12, #d35400);
+            color: white;
+            border: none;
+            border-radius: 14px;
+            cursor: pointer;
+            box-shadow: 0 6px 20px rgba(243,156,18,0.45);
+            margin-bottom: 8px;
+            transition: transform 0.1s;
+        }
+        #btn-tilt-perm:active { transform: scale(0.96); }
+
+        #serve-area {
+            display: none;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
+        #btn-serve {
+            width: 80vw;
+            height: 32vh;
+            font-size: 2.6rem;
             font-weight: bold;
-            background-color: #f5b041;
+            background: linear-gradient(135deg, #f5b041, #e67e22);
             color: #1a1a24;
             border: none;
             border-radius: 20px;
-            box-shadow: 0 10px 20px rgba(0,0,0,0.5);
-            margin-top: 20px;
+            box-shadow: 0 10px 30px rgba(245,176,65,0.4);
+            margin: 16px 0;
+            cursor: pointer;
+            transition: transform 0.1s;
         }
-        #btn-serve:active {
-            transform: scale(0.95);
+        #btn-serve:active { transform: scale(0.95); }
+
+        /* Touch-drag zone */
+        #drag-zone {
+            display: none;
+            width: 90vw;
+            height: 14vh;
+            background: rgba(255,255,255,0.07);
+            border: 2px solid rgba(255,255,255,0.18);
+            border-radius: 16px;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            color: #aaa;
+            letter-spacing: 1px;
+            margin-top: 8px;
+            position: relative;
+            overflow: hidden;
         }
-        #debug {
+        #drag-indicator {
+            width: 50px;
+            height: 50px;
+            background: rgba(245,176,65,0.7);
+            border-radius: 50%;
             position: absolute;
-            bottom: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            left: 50%;
+            margin-left: -25px;
+            transition: left 0.05s linear;
+            pointer-events: none;
+        }
+
+        /* Debug panel */
+        #debug {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0,0,0,0.55);
+            padding: 8px 14px;
             font-family: monospace;
-            color: #888;
-            font-size: 0.9rem;
+            font-size: 0.78rem;
+            color: #8ef;
+            line-height: 1.6;
         }
     </style>
 </head>
 <body>
 
-    <div id="status">Disconnected</div>
-    <button id="btn-connect">CONNECT PADDLE</button>
-    <button id="btn-serve">SERVE</button>
-    <div id="debug">Tilt: 0.00</div>
+    <h1>🏓 Table Tennis</h1>
+    <div id="status">Tap CONNECT to start</div>
+    <button id="btn-connect">CONNECT</button>
+    <div id="serve-area">
+        <!-- iOS tilt permission button lives here — inside connected view -->
+        <button id="btn-tilt-perm">📡 ENABLE TILT SENSOR</button>
+        <button id="btn-serve">🏓 SERVE</button>
+        <div id="drag-zone">
+            ← SWIPE TO MOVE PADDLE →
+            <div id="drag-indicator"></div>
+        </div>
+    </div>
 
-    <script>
-        const btnConnect = document.getElementById('btn-connect');
-        const btnServe = document.getElementById('btn-serve');
-        const statusEl = document.getElementById('status');
-        const debugEl = document.getElementById('debug');
-        
-        let ws;
-        let isConnected = false;
+    <div id="debug">
+        Status: waiting<br>
+        Gamma (tilt L/R): —<br>
+        Tilt sent: —<br>
+        IMU source: —
+    </div>
 
-        function connectWebSocket() {
-            // Assume the PC is serving this file on port 8080.
-            // Connect WebSocket to the same IP but port 8765.
-            alert("CREATING WEBSOCKET");
-            const pc_ip = window.location.hostname;
-            ws = new WebSocket(`ws://${pc_ip}:8765`);
-            alert(`Trying ws://${pc_ip}:8765`);
-            alert("WEBSOCKET OBJECT CREATED");
+<script>
+// ── Elements ──────────────────────────────────────────────────────────────────
+const btnConnect   = document.getElementById('btn-connect');
+const btnTiltPerm  = document.getElementById('btn-tilt-perm');
+const btnServe     = document.getElementById('btn-serve');
+const serveArea    = document.getElementById('serve-area');
+const dragZone     = document.getElementById('drag-zone');
+const dragIndicator= document.getElementById('drag-indicator');
+const statusEl     = document.getElementById('status');
+const debugEl      = document.getElementById('debug');
 
-            ws.onopen = () => {
-                isConnected = true;
-                statusEl.textContent = "CONNECTED - TILT TO MOVE";
-                statusEl.style.color = "#4CAF50";
-                btnConnect.style.display = "none";
-                btnServe.style.display = "block";
-            };
+// ── State ─────────────────────────────────────────────────────────────────────
+let ws          = null;
+let isConnected = false;
+let imuEnabled  = false;   // deviceorientation firing
+let currentTilt = 0.0;     // -1..1, updated from IMU or touch
+let imuSource   = 'none';
 
-            ws.onclose = () => {
-                alert("WebSocket closed");
-                isConnected = false;
-                statusEl.textContent = "Disconnected - Refresh to retry";
-                statusEl.style.color = "#ff6b6b";
-                btnConnect.style.display = "block";
-                btnServe.style.display = "none";
-            };
+// ── Debug helper ──────────────────────────────────────────────────────────────
+function setDebug(gamma, tiltSent) {
+    debugEl.innerHTML =
+        `Status: ${isConnected ? 'connected ✓' : 'disconnected'}<br>` +
+        `Gamma (tilt L/R): ${gamma !== null ? gamma.toFixed(2) + '°' : '—'}<br>` +
+        `Tilt sent: ${tiltSent !== null ? tiltSent.toFixed(3) : '—'}<br>` +
+        `IMU source: ${imuSource}`;
+}
 
-            ws.onerror = (e) => {
-                alert("WebSocket error");
-            };
-        }
+// ── WebSocket ─────────────────────────────────────────────────────────────────
+function connectWebSocket() {
+    const pc_ip = window.location.hostname;
+    const url   = `ws://${pc_ip}:8765`;
+    statusEl.textContent = `Connecting to ${url}…`;
+    statusEl.style.color = '#f5b041';
 
-        btnConnect.addEventListener('click', () => {
-            alert("CONNECT BUTTON CLICKED");
-            connectWebSocket();
-            window.addEventListener('deviceorientation', handleOrientation);
+    ws = new WebSocket(url);
 
-            alert("BYPASS MODE");
-        });
+    ws.onopen = () => {
+        isConnected = true;
+        statusEl.textContent = 'CONNECTED — Tilt phone to move paddle';
+        statusEl.style.color = '#4CAF50';
+        btnConnect.style.display = 'none';
+        serveArea.style.display  = 'flex';
+        dragZone.style.display   = 'flex';
+        setDebug(null, null);
+        // Start sensor AFTER connection so the permission button
+        // appears inside the now-visible serve area
+        startOrientationListener();
+    };
 
-        btnServe.addEventListener('touchstart', (e) => {
-            e.preventDefault();
-            if (isConnected) {
-                ws.send(JSON.stringify({ type: 'action', action: 'serve' }));
-                navigator.vibrate && navigator.vibrate(50);
-            }
-        });
+    ws.onclose = () => {
+        isConnected = false;
+        imuEnabled  = false;
+        statusEl.textContent = 'Disconnected — refresh to retry';
+        statusEl.style.color = '#ff6b6b';
+        btnConnect.style.display = 'block';
+        serveArea.style.display  = 'none';
+        dragZone.style.display   = 'none';
+        setDebug(null, null);
+    };
 
-        // For desktop testing
-        btnServe.addEventListener('mousedown', (e) => {
-            if (isConnected) {
-                ws.send(JSON.stringify({ type: 'action', action: 'serve' }));
-            }
-        });
+    ws.onerror = () => {
+        statusEl.textContent = 'Connection failed — check IP & Wi-Fi';
+        statusEl.style.color = '#ff6b6b';
+    };
+}
 
-        function handleOrientation(event) {
-            if (!isConnected) return;
-            
-            // beta is front-to-back tilt in degrees, where front is positive
-            // gamma is left-to-right tilt in degrees, where right is positive
-            // For a paddle held horizontally (landscape), beta or gamma might be the steering axis.
-            // Assuming phone is held in Portrait mode like a joystick:
-            // Tilting phone left/right is 'gamma'.
-            let gamma = event.gamma; 
-            
-            // Clamp gamma between -45 and 45
-            if (gamma > 45) gamma = 45;
-            if (gamma < -45) gamma = -45;
+// ── Send IMU ──────────────────────────────────────────────────────────────────
+// Throttled sender: 30 Hz max so we don't flood the server
+let lastSendTime = 0;
+function sendTilt(tilt) {
+    if (!isConnected || ws.readyState !== WebSocket.OPEN) return;
+    const now = Date.now();
+    if (now - lastSendTime < 33) return;  // ~30 Hz
+    lastSendTime = now;
+    ws.send(JSON.stringify({ type: 'imu', beta: tilt * 45.0 }));
+    // We multiply back by 45 because the server divides by 45 to get [-1,1]
+}
 
-            debugEl.textContent = `Tilt (gamma): ${gamma.toFixed(2)}`;
+// ── DeviceOrientation ─────────────────────────────────────────────────────────
+const TILT_DEAD_ZONE = 3;   // degrees — ignore tiny wobbles
+const TILT_MAX       = 45;  // degrees — full deflection
 
-            ws.send(JSON.stringify({
-                type: 'imu',
-                beta: gamma  // We send gamma as the primary steering axis (mapped to beta on server)
-            }));
-        }
-    </script>
+function handleOrientation(event) {
+    if (!isConnected) return;
+
+    let gamma = event.gamma;  // left/right tilt in degrees
+    if (gamma === null || gamma === undefined) return;
+
+    imuEnabled = true;
+    imuSource  = 'deviceorientation (gamma)';
+
+    // Dead zone
+    if (Math.abs(gamma) < TILT_DEAD_ZONE) gamma = 0;
+
+    // Clamp
+    gamma = Math.max(-TILT_MAX, Math.min(TILT_MAX, gamma));
+
+    // Normalize to -1..1
+    currentTilt = gamma / TILT_MAX;
+
+    sendTilt(currentTilt);
+    updateDragIndicator(currentTilt);
+    setDebug(gamma, currentTilt);
+}
+
+// ── Permission flow ───────────────────────────────────────────────────────────
+function startOrientationListener() {
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+ — must be triggered by a user gesture AFTER we show the button
+        btnTiltPerm.style.display = 'block';
+        btnTiltPerm.onclick = () => {
+            DeviceOrientationEvent.requestPermission()
+                .then(state => {
+                    if (state === 'granted') {
+                        window.addEventListener('deviceorientation', handleOrientation, true);
+                        btnTiltPerm.style.display = 'none';  // only hide on success
+                        statusEl.textContent = 'TILT ENABLED — Move your phone!';
+                        imuSource = 'iOS deviceorientation';
+                    } else {
+                        btnTiltPerm.textContent  = '❌ Tilt denied — use swipe below';
+                        imuSource = 'touch drag only';
+                    }
+                })
+                .catch(() => {
+                    btnTiltPerm.textContent = '⚠️ Sensor error — use swipe';
+                    imuSource = 'touch drag only';
+                });
+        };
+    } else {
+        // Android / desktop — listener works without permission dialog
+        btnTiltPerm.style.display = 'none';   // no button needed
+        window.addEventListener('deviceorientation', handleOrientation, true);
+        imuSource = 'deviceorientation (auto)';
+    }
+}
+
+// ── Touch-drag fallback ───────────────────────────────────────────────────────
+// If IMU doesn't work, horizontal swipe on the drag zone sends tilt.
+let touchStartX   = null;
+const DRAG_MAX_PX = 120;   // px of drag → full tilt
+
+function updateDragIndicator(tilt) {
+    // tilt is -1..1; map to position within dragZone
+    const zoneW  = dragZone.offsetWidth;
+    const center = zoneW / 2;
+    const offset = tilt * (center - 30);   // keep within zone
+    dragIndicator.style.left = (center + offset - 25) + 'px';
+}
+
+dragZone.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    touchStartX = e.touches[0].clientX;
+}, { passive: false });
+
+dragZone.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (touchStartX === null) return;
+
+    const dx   = e.touches[0].clientX - touchStartX;
+    const tilt = Math.max(-1, Math.min(1, dx / DRAG_MAX_PX));
+    currentTilt = tilt;
+    imuSource   = 'touch drag';
+
+    sendTilt(tilt);
+    updateDragIndicator(tilt);
+    setDebug(tilt * TILT_MAX, tilt);
+}, { passive: false });
+
+dragZone.addEventListener('touchend', () => {
+    // Smoothly return to center when finger is lifted
+    touchStartX = null;
+    currentTilt = 0;
+    sendTilt(0);
+    updateDragIndicator(0);
+});
+
+// ── Mouse drag (desktop testing) ──────────────────────────────────────────────
+let mouseDown = false;
+let mouseSX   = null;
+dragZone.addEventListener('mousedown', (e) => { mouseDown = true; mouseSX = e.clientX; });
+window.addEventListener('mousemove',  (e) => {
+    if (!mouseDown || mouseSX === null) return;
+    const dx   = e.clientX - mouseSX;
+    const tilt = Math.max(-1, Math.min(1, dx / DRAG_MAX_PX));
+    currentTilt = tilt;
+    sendTilt(tilt);
+    updateDragIndicator(tilt);
+    setDebug(tilt * TILT_MAX, tilt);
+});
+window.addEventListener('mouseup', () => {
+    if (mouseDown) { mouseDown = false; mouseSX = null; sendTilt(0); updateDragIndicator(0); }
+});
+
+// ── Serve button ──────────────────────────────────────────────────────────────
+function doServe() {
+    if (!isConnected || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'action', action: 'serve' }));
+    navigator.vibrate && navigator.vibrate(60);
+}
+btnServe.addEventListener('touchstart', (e) => { e.preventDefault(); doServe(); }, { passive: false });
+btnServe.addEventListener('mousedown',  () => doServe());
+
+// ── Connect button ────────────────────────────────────────────────────────────
+btnConnect.addEventListener('click', () => {
+    connectWebSocket();
+    // NOTE: startOrientationListener() is called from ws.onopen
+    // so the permission button appears after the serve area is visible.
+});
+
+// ── Prevent scroll / zoom ─────────────────────────────────────────────────────
+document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+</script>
 </body>
 </html>

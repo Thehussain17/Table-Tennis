@@ -20,7 +20,7 @@ COR_TABLE           = 0.89         # coefficient of restitution (table surface)
 COR_PADDLE          = 0.85
 FRICTION_TABLE      = 0.95         # lateral speed kept after bounce
 
-MAX_BALL_SPEED      = 8.0          # m/s cap
+MAX_BALL_SPEED      = 8.0          # m/s global cap (Hard hits approach this)
 
 # ─── TABLE (real dimensions in metres) ─────────────────────────────────────────
 TABLE_LENGTH        = 2.74
@@ -43,14 +43,33 @@ PADDLE_MIN_Z        = 0.0
 PADDLE_MAX_Z        = 0.5
 
 # Initial serve speed
-SERVE_SPEED_Y       = 2.0          # m/s toward opponent
-SERVE_SPEED_Z       = 2.2          # m/s upward
+SERVE_SPEED_Y       = 3.5          # m/s toward opponent  (was 2.0, too slow to arc over net)
+SERVE_SPEED_Z       = 3.0          # m/s upward           (was 2.2, not enough loft)
 
 # ─── AI ────────────────────────────────────────────────────────────────────────
 AI_PROFILES = {
-    "Easy":   {"reaction": 0.50, "speed": 0.7, "error": 0.18},
-    "Medium": {"reaction": 0.25, "speed": 0.90, "error": 0.08},
-    "Hard":   {"reaction": 0.10, "speed": 1.00, "error": 0.02},
+    # reaction  : delay before tracking starts (seconds)
+    # speed     : fraction of PADDLE_SPEED used for tracking
+    # error     : random positional error added to target (metres)
+    # hit_pmin  : minimum power multiplier on each hit
+    # hit_pmax  : maximum power multiplier on each hit
+    # hit_arc   : vz applied to ball after hit (lower = flatter, faster drop)
+    # aim_spread: how far from center the AI can aim (0=center, 1=full width)
+    "Easy": {
+        "reaction":   0.30, "speed":     0.50, "error":     0.25,
+        "hit_pmin":   0.45, "hit_pmax":  0.60,
+        "hit_arc":    1.9,  "aim_spread": 0.8,
+    },
+    "Medium": {
+        "reaction":   0.25, "speed":     0.78, "error":     0.08,
+        "hit_pmin":   0.60, "hit_pmax":  0.78,
+        "hit_arc":    2.0,  "aim_spread": 0.86,
+    },
+    "Hard": {
+        "reaction":   0.05, "speed":     1.10, "error":     0.01,
+        "hit_pmin":   0.85, "hit_pmax":  1.00,
+        "hit_arc":    2.6,  "aim_spread": 1.0,
+    },
 }
 DEFAULT_DIFFICULTY  = "Medium"
 
